@@ -1,8 +1,4 @@
-class vim (
-
-  $default_editor = true,
- 
-) {
+class vim {
 
   include vim::install
   include vim::config
