@@ -1,5 +1,7 @@
 class vim::install {
+
   package { 'vim':
-    ensure => insalled,
+    ensure => installed,
   }
+
 }
