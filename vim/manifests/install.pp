@@ -1,7 +1,7 @@
 class vim::install {
 
   package { 'vim':
-    ensure => installed,
+    ensure => latest,
   }
 
 }
