@@ -1,0 +1,9 @@
+{
+	"name": "bash-prompt",
+	"version": "1.0.0",
+	"summary": "Configures Bash prompt and history",
+	"author": "Andrew Ladlow",
+	"license": "",
+	"dependencies": [],
+	"source": "https://github.com/andrewladlow/puppet-modules"
+}
