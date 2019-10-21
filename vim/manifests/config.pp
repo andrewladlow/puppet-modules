@@ -14,4 +14,8 @@ class vim::config {
     require => Package['vim'],
   } 
 
+  # set default editor
+  file { '/root/.selected_editor':
+    content => file('vim/selected_editor'),
+  }
 }
