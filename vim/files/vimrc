@@ -1,0 +1,157 @@
+runtime! debian.vim
+
+" Vim will load $VIMRUNTIME/defaults.vim if the user does not have a vimrc.
+" This happens after /etc/vim/vimrc(.local) are loaded, so it will override
+" any settings in these files.
+" If you don't want that to happen, uncomment the below line to prevent
+" defaults.vim from being loaded.
+" let g:skip_defaults_vim = 1
+
+" Uncomment the next line to make Vim more Vi-compatible
+" NOTE: debian.vim sets 'nocompatible'.  Setting 'compatible' changes numerous
+" options, so any other options should be set AFTER setting 'compatible'.
+"set compatible
+
+" enable colours
+syntax on
+
+" Show quotes in JSON (was overriden by indentLine) - https://vi.stackexchange.com/a/19974
+let g:indentLine_setConceal = 2
+" default ''.
+" n for Normal mode
+" v for Visual mode
+" i for Insert mode
+" c for Command line editing, for 'incsearch'
+let g:indentLine_concealcursor = ""
+
+" Show all characters
+set listchars=eol:$,tab:>-,trail:~,extends:>,precedes:<
+set list
+
+set background=dark
+
+" Replace <leader> (default '\') with ','
+let mapleader = ","
+
+" Toggle NERDTree with , nt
+nmap <leader>nt :NERDTreeToggle <cr>
+" Toggle indent guidelines with ,,
+nmap <leader><leader> :IndentLinesToggle <cr>
+" Toggle line numbers with ,.
+nmap <leader>. :set invnumber <cr>
+" Next tab
+nmap <leader>bn :bn <cr>
+" Prev tab
+nmap <leader>bp :bp <cr>
+" Close current buffer (if more than one) without closing window
+nmap <leader>bq :bp \| bd # <cr>
+" Remove trailing whitespace
+nmap <leader>ws :%s/\s\+$//e <cr>
+" Deindent with shift tab
+imap <S-TAB> <C-d>
+" Indent / Deindent selection
+vmap <TAB> >gv
+vmap <S-TAB> <gv
+
+" Uncomment the following to have Vim jump to the last position when
+" reopening a file
+"if has("autocmd")
+"  au BufReadPost * if line("'\"") > 1 && line("'\"") <= line("$") | exe "normal! g'\"" | endif
+"endif
+
+set showcmd		" Show (partial) command in status line.
+set showmatch		" Show matching brackets.
+set ignorecase		" Do case insensitive matching
+set smartcase		" Do smart case matching
+set incsearch		" Incremental search
+set autowrite		" Automatically save before commands like :next and :make
+set hidden		" Hide buffers when they are abandoned
+set mouse=a		" Enable mouse usage (all modes)
+
+" Source a global configuration file if available
+if filereadable("/etc/vim/vimrc.local")
+  source /etc/vim/vimrc.local
+endif
+
+" Enable pathogen
+execute pathogen#infect()
+
+" Load plugins and indent rules according to filetype
+filetype plugin indent on
+
+" perltidy support
+autocmd FileType perl setlocal equalprg=perltidy\ -st
+
+" Rainbow Parentheses config
+au VimEnter * RainbowParenthesesToggle
+au Syntax * RainbowParenthesesLoadRound
+au Syntax * RainbowParenthesesLoadSquare
+au Syntax * RainbowParenthesesLoadBraces
+"au Syntax * RainbowParenthesesLoadChevrons
+
+" Show existing tab with 2 spaces width
+set tabstop=2
+" When indenting with '>', use 2 spaces width
+set shiftwidth=2
+" On pressing tab, insert 2 spaces
+set expandtab
+
+" Show status line for all windows
+set laststatus=2
+
+" Remove default '-- INSERT --'
+set noshowmode
+
+" Line numbers
+set nu
+
+" Indent guide config
+"let g:indent_guides_enable_on_vim_startup = 1
+"let g:indent_guides_guide_size = 1
+"let g:gruvbox_invert_indent_guides='0'
+
+let g:indentLine_enabled = 1
+"let g:indentLine_char = '┆'
+
+" Tab autocomplete bar
+set wildmenu
+set wildmode=longest,list,full
+
+" Airline config
+" Enable enhanced tabline
+let g:airline#extensions#tabline#enabled = 1
+" Disable buffer filename path collapse
+let g:airline#extensions#tabline#fnamecollapse = 0
+" Show splits and tab numbers
+let g:airline#extensions#tabline#tab_nr_type = 2
+" Only show buffers when more than 1 is present
+let g:airline#extensions#tabline#buffer_min_count = 2
+" Enable unicode characters
+let g:airline_powerline_fonts = 1
+
+" Syntastic config
+"set statusline+=%#warningmsg#
+"set statusline+=%{SyntasticStatuslineFlag()}
+"set statusline+=%*
+
+"let g:syntastic_always_populate_loc_list = 1
+"let g:syntastic_auto_loc_list = 1
+"let g:syntastic_check_on_open = 1
+"let g:syntastic_check_on_wq = 0
+"
+" ALE config
+" Enable airline support
+let g:airline#extensions#ale#enabled = 1
+
+" Open error window automatically
+let g:ale_open_list = 1
+" Disable/Enable loclist or quickfix list
+let g:ale_set_loclist = 1
+let g:ale_set_quickfix = 0
+
+" Hard contrast
+let g:gruvbox_contrast_dark='hard'
+" Highlighted strings
+let g:gruvbox_improved_strings = 0
+" Colours
+colorscheme gruvbox
