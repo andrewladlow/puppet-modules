@@ -1,0 +1,9 @@
+{
+	"name": "nginx",
+	"version": "1.0.0",
+	"summary": "Installs and configures nginx",
+	"author": "Andrew Ladlow",
+	"license": "",
+	"dependencies": [],
+	"source": "https://github.com/andrewladlow/puppet-modules"
+}
