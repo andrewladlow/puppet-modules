@@ -7,7 +7,7 @@ class nginx::config {
     line    => '	server_tokens off;',
     match   => '	# server_tokens off;',
     require => Package['nginx'],
-    notify => Service['nginx'],
+    notify  => Service['nginx'],
   }
 
 }
