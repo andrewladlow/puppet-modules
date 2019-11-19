@@ -1,0 +1,9 @@
+{
+	"name": "teamspeak",
+	"version": "1.0.0",
+	"summary": "Downloads and configures teamspeak 3",
+	"author": "Andrew Ladlow",
+	"license": "",
+	"dependencies": [],
+	"source": "https://github.com/andrewladlow/puppet-modules"
+}

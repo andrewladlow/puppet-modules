@@ -1,2 +1,6 @@
 alternatives
 stdlib
+epel
+puppetboard
+vcsrepo
+python

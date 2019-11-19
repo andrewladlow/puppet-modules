@@ -1,0 +1,10 @@
+[Unit]
+Description=Teamspeak 3 server
+After=network.target
+
+[Service]
+ExecStart=/opt/teamspeak3-server_linux_amd64/ts3server_minimal_runscript.sh
+User=teamspeak
+
+[Install]
+WantedBy=multi-user.target
