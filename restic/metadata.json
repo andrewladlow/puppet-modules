@@ -1,0 +1,9 @@
+{
+	"name": "restic",
+	"version": "1.0.0",
+	"summary": "Configures Restic",
+	"author": "Andrew Ladlow",
+	"license": "",
+	"dependencies": [],
+	"source": "https://github.com/andrewladlow/puppet-modules"
+}
