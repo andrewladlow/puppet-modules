@@ -6,7 +6,7 @@ class restic::config {
 
   file { '/etc/cron.daily/restic':
     ensure  => file,
-    content => file('restic/restic_cron'),
+    content => file('restic/cron_daily-restic'),
   }
 }
 
