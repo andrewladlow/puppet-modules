@@ -3,5 +3,11 @@ class restic::config {
     ensure  => file,
     content => file('restic/restic-excludes.txt'),
   }
+
+  file { '/etc/cron.daily/restic':
+    ensure  => file,
+    content => file('restic/restic_cron'),
+  }
+}
 }
 
