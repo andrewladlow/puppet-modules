@@ -9,5 +9,4 @@ class restic::config {
     content => file('restic/restic_cron'),
   }
 }
-}
 
