@@ -1,9 +1,0 @@
-ssl() {
-  true | openssl s_client -servername $@ -connect $@:443 | openssl x509 -noout -text | grep -E 'Before|After|DNS'
-}
-ssl-full() {
-  true | openssl s_client -showcerts -servername $@ -connect $@:443 </dev/null
-}
-ssl-full2() {
-  true | openssl s_client -servername $@ -connect $@:443 | openssl x509 -noout -text
-}

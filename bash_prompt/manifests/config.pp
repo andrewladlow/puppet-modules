@@ -8,10 +8,5 @@ class bash_prompt::config {
     ensure  => file,
     content => file('bash_prompt/screenrc'),
   }
-
-  file { '~/.bash_aliases':
-    ensure  => file,
-    content => file('bash_prompt/bash_aliases'),
-  }
 }
 
