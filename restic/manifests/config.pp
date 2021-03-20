@@ -6,6 +6,8 @@ class restic::config {
 
   file { '/etc/cron.daily/restic':
     ensure  => file,
+    mode    => '0755',
+    replace => no, 
     content => file('restic/cron_daily-restic'),
   }
 }
