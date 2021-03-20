@@ -1,31 +1,31 @@
 # Backup files
-"*~"
-"*.bak"
-"/**/.backup"
+*~
+*.bak
+/**/.backup
 
 # Temp files
-"/#*#"
-"/.#*"
+/#*#
+/.#*
 
 # Misc
 ~/tmp
 
-"/storage/*"
-"/media/*"
-"/mnt/*"
-"/dev/*"
-"/proc/*"
-"/sys/*"
-"/run/*"
-"/var/run/*"
-"/var/backups/localhost/*"
-"/tmp/*"
-"/lot+found"
-"/var/lib/mysql/*"
-"/var/lib/postgresql/*"
-"/var/tmp/*"
-"/swap.file"
-"/var/cache/apt/archives/*"
-"/var/lib/php5/*"
-"/var/lib/docker/aufs/*"
-"/var/lib/docker/overlay2/*"
+/storage
+/media
+/mnt
+/dev
+/proc
+/sys
+/run
+/var/run
+/var/backups/localhost
+/tmp
+/lot+found
+/var/lib/mysql
+/var/lib/postgresql
+/var/tmp
+/swap.file
+/var/cache/apt/archives
+/var/lib/php5
+/var/lib/docker/aufs
+/var/lib/docker/overlay2
