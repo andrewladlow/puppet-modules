@@ -27,10 +27,10 @@ HISTCONTROL=ignoreboth
 shopt -s histappend
 
 # save every command in 'history'
-HISTSIZE=
+HISTSIZE=-1
 
 # and in ~/.bash_history
-HISTFILESIZE=
+HISTFILESIZ=-1
 
 # print timestamp before command
 HISTTIMEFORMAT="%F %T: "
