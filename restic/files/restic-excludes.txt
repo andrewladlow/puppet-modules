@@ -10,6 +10,7 @@
 # Misc
 ~/tmp
 
+/opt/chia
 /storage
 /media
 /mnt
