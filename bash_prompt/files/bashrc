@@ -30,7 +30,7 @@ shopt -s histappend
 HISTSIZE=-1
 
 # and in ~/.bash_history
-HISTFILESIZ=-1
+HISTFILESIZE=-1
 
 # print timestamp before command
 HISTTIMEFORMAT="%F %T: "
