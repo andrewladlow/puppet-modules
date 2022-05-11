@@ -10,5 +10,10 @@ class restic::config {
     replace => no, 
     content => file('restic/cron_daily-restic'),
   }
+
+  exec { 'Update Restic':
+    command => 'restic self-update',
+    path    => '/usr/local/bin/:/bin/',
+  }
 }
 
