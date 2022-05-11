@@ -2,6 +2,6 @@
 
 export RESTIC_PASSWORD=""
 export GOGC=20
-restic -r sftp:rs3:/storage/restic-backups --verbose backup / --exclude-file=/root/restic-excludes.txt --tag
+restic -r sftp:rs3:/storage/restic-backups --verbose backup / --exclude-file=/root/restic-excludes.txt --tag $(hostname -s)
 
 exit 0
