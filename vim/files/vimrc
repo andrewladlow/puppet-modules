@@ -27,8 +27,8 @@ let g:indentLine_setConceal = 2
 let g:indentLine_concealcursor = ""
 
 " Show all characters
-set listchars=eol:$,tab:>-,trail:~,extends:>,precedes:<
-set list
+" set listchars=eol:$,tab:>-,trail:~,extends:>,precedes:<
+" set list
 
 set background=dark
 
@@ -146,7 +146,7 @@ let g:airline_powerline_fonts = 1
 let g:airline#extensions#ale#enabled = 1
 
 " Open error window automatically
-let g:ale_open_list = 1
+" let g:ale_open_list = 1
 " Disable/Enable loclist or quickfix list
 let g:ale_set_loclist = 1
 let g:ale_set_quickfix = 0
