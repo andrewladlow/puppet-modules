@@ -1,0 +1,709 @@
+#!/bin/bash
+#
+# bmSQLdump - a fairly simple utility to dump databases sanely
+# version 20190309a
+#
+# Copyright 2019 Paul Cammish <paul.cammish@bytemark.co.uk>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+
+
+# Set basic environment
+
+set -o pipefail
+#set -e
+
+if [ "$( echo "$@" | grep -c ' --debug ' )" != "0" ]; then DEBUG="TRUE"; fi
+
+#############################################################################
+#                        Base Debug/Error Functions                         #
+#############################################################################
+
+function _debug {
+  if [ $DEBUG ]; then
+    echo -e "\e[2mDEBUG: $@\e[0m"
+  fi
+}
+
+function _warn {
+  echo -e "\e[1m\e[33m WARN: $@\e[0m"
+  echo "WARNING: $@" >> "$DUMP_DIR/$LOGNAME"
+  echo "WARNING: $@" >> "$_TEMP-$LOGNAME"
+
+}
+
+function _error {
+  echo -e "\e[1m\e[31mERROR: $@\e[0m"
+  echo "ERROR: $@" >> "$DUMP_DIR/$LOGNAME"
+  echo "ERROR: $@" >> "$_TEMP-$LOGNAME"
+  if [ "${MAUVESEND}" != "" ]; then
+    $MAUVESEND $MAUVE_TARGET --id bmsqldump-normal -o "$HOSTNAME" -r now -s "bmSQLdump detected error on $HOSTNAME" -d "Error Detected:<pre>$( tail $_TEMP-$LOGNAME )</pre><p>This alert will clear once the dump completes okay."
+  fi
+  _exit 1
+}
+
+function _verbose {
+  if [ $DEBUG ]; then
+    echo " INFO: $@"
+  elif [ $VERBOSE ]; then
+    echo "$@"
+  fi
+  if [ ! -d "$DUMP_DIR" ]; then mkdir -p $DUMP_DIR; fi
+  echo "$@" >> "$DUMP_DIR/$LOGNAME"
+  echo "$@" >> "$_TEMP-$LOGNAME"
+}
+
+function _check_stderr {
+  if [ $( cat "$STDERR" | wc -l ) -gt 0 ] || [ "$1" -ne "0" ]; then
+    _error "== errorcode $1 =="
+    cat "$STDERR" | while read line; do
+      _error "$line"
+    done
+    _exit 1
+  fi
+  rm "$STDERR"
+}
+
+function _exit {
+  _debug Exiting with errorcode: $1
+  if [ $DEBUG ]; then ls -la $DUMP_DIR; fi
+  rm $_TEMP-* 2> /dev/null
+  if [ -f "$DUMP_DIR/$LOGNAME" ]; then
+    tail -n 10000 $DUMP_DIR/$LOGNAME > $DUMP_DIR/$LOGNAME.new
+    mv $DUMP_DIR/$LOGNAME.new $DUMP_DIR/$LOGNAME
+  fi
+  exit $1
+}
+
+function _dump_failed {
+  _warn "Dump of database '$DATABASE' failed - alert mauve!"
+  rm "$@"
+}
+
+function _bytesToHuman() {
+  # Taken from https://unix.stackexchange.com/a/259254
+  b=${1:-0}; d=''; s=0; S=(B {K,M,G,T,P,E,Z,Y});
+  while ((b > 1024)); do
+    d="$(printf ".%02d" $((b % 1024 * 100 / 1024)))"
+    b=$((b / 1024))
+    let s++
+  done
+  echo "$b$d${S[$s]}"
+}
+
+function _validate_dump {
+  TEST_FILENAME="$@"
+  _debug "Checking $TEST_FILENAME for valid dump"
+  if [ $( cat "$TEST_FILENAME" | gunzip | tail -n 3 | grep -c '^-- PostgreSQL database dump complete\|^-- Dump completed on\|^-- PostgreSQL database cluster dump complete' ) -eq 1 ]; then
+    _verbose "  Completed $(_bytesToHuman $(gzip -l $TEST_FILENAME | tail -n 1 | awk '{ print $2 }' )) dump of '$DATABASE' at $( date ) ($(_bytesToHuman $(gzip -l $TEST_FILENAME | tail -n 1 | awk '{ print $1 }' )) gzip, $(gzip -l $TEST_FILENAME | tail -n 1 | awk '{ print $3 }'))"
+  else
+    _warn "Dump of $DATABASE appears to be truncated"
+    _dump_failed $TEST_FILENAME
+  fi
+}
+
+
+
+#############################################################################
+#                               Set Defaults                                #
+#############################################################################
+
+# Note: To override thse defaults, copy and paste the modified entries to '/etc/bmsqldump.config',
+# or if using another path, use the --config command line parameter
+
+# Basic settings
+
+DUMP_DIR=/var/backups/bmsqldump
+KEEP_MAX_COPIES="2"
+
+# Complex settings - be careful!
+
+LOGNAME=bmSQLdump.log
+_TEMP=/tmp/__bmsqldump
+STDERR="$_TEMP-stderr"
+SEPERATOR='--'
+CONFIG_FILE=/etc/bmsqldump.config
+
+# MySQL defaults
+
+MYSQL=$( which mysql 2> /dev/null )
+MYSQLDUMP=$( which mysqldump 2> /dev/null )
+MYSQL_DEFAULTS='/etc/mysql/bmsqldump.cnf'
+MYSQL_SKIP_DB='information_schema performance_schema'
+MYSQLDUMP_OPTIONS='--create-options --no-create-db --events --triggers --routines --dump-date --tz-utc'
+
+# Postgres defaults
+
+PGSQL=$( which psql 2> /dev/null )
+PGSQLDUMP=$( which pg_dump 2> /dev/null )
+PGSQLDUMP_OPTIONS='--no-password --oids --clean'
+PGSQLDUMPALL=$( which pg_dumpall 2> /dev/null )
+PGSQLDUMPALL_OPTIONS='--no-password --oids --clean'
+POSTGRES_USER='postgres'
+PGSQL_SKIP_DB='template0'
+
+# Mauve settings
+
+MAUVESEND=$( which mauvesend 2> /dev/null )
+MAUVE_TARGET=alert.bytemark.co.uk
+
+# Output settings
+
+#DEBUG=TRUE
+#VERBOSE=TRUE
+
+# Determine possible defaults
+
+# Enable MySQL dumps if we can see both the client and the dump util in the path
+if [ -f "$MYSQL" ] && [ -f "$MYSQLDUMP" ]; then
+  BACKUP_MYSQL=TRUE
+else
+  unset BACKUP_MYSQL
+fi
+
+# Enable PostgreSQL dumps if we can see the client and both the dump utils in the path
+if [ -f "$PGSQL" ] && [ -f "$PGSQLDUMP" ] && [ -f "$PGSQLDUMPALL" ]  ; then
+  BACKUP_PGSQL=TRUE
+else
+  unset BACKUP_PGSQL
+fi
+
+
+#############################################################################
+#                         Import Default Overrides                          #
+#############################################################################
+
+function import_default_overrides {
+  if [ -f "$CONFIG_FILE" ]; then
+    if [ $( find "$CONFIG_FILE" -user root -perm 600 | wc -l ) == 1 ]; then
+      _debug Executing config file $CONFIG_FILE
+      . $CONFIG_FILE
+    else
+      _warn Config file found but not secured. Ignoring.
+    fi
+  fi
+}
+
+if [ "$( echo "$@" | grep -c ' --config ' )" == "0" ]; then
+  import_default_overrides
+else
+  _debug "Config override detected in command line, will run once parsed"
+fi
+
+#############################################################################
+#                       Read Command Line Parameters                        #
+#############################################################################
+
+_debug "Command line parameters: $@"
+
+PARAMETERS=()
+while [ $# -gt 0 ]; do
+  key="$1"
+
+  case $key in
+    --keep|-k)
+      KEEP_MAX_COPIES="$2"
+      shift; shift
+    ;;
+    --dir|-d)
+      DUMP_DIR="$2"
+      shift; shift
+    ;;
+    --postgres-user)
+      POSTGRES_USER="$2"
+      shift; shift
+    ;;
+    --mysql)
+      MYSQL="$2"
+      shift; shift
+    ;;
+    --mysqldump)
+      MYSQLDUMP="$2"
+      shift; shift
+    ;;
+    --mysql-defaults)
+      MYSQL_DEFAULTS="$2"
+      shift
+    ;;
+    --psql)
+      PGSQL="$2"
+      shift; shift
+    ;;
+    --pg_dump)
+      PGSQLDUMP="$2"
+      shift; shift
+    ;;
+    --skip-postgres|--skippostgres)
+      unset BACKUP_PGSQL
+      shift
+    ;;
+    --skip-mysql|--skipmysql)
+      unset BACKUP_MYSQL
+      shift
+    ;;
+    --debug)
+      DEBUG="TRUE"
+      shift
+    ;;
+    --verbose|-v)
+      VERBOSE="TRUE"
+      shift
+    ;;
+    --force)
+      FORCE="TRUE"
+      shift
+    ;;
+    --config)
+      CONFIG_FILE="$2"
+      import_default_overrides
+      shift; shift
+    ;;
+#    --restore) # Currently incomplete. May be split to 'bmsqlrestore'
+#      RESTORE="$2"
+#      VERBOSE="TRUE"
+#      shift; shift
+#    ;;
+    *) # unhandled parameter
+      PARAMETERS+=("$1") # save it in an array for later
+      shift # past argument
+    ;;
+  esac
+done
+
+#set -- "${PARAMETERS[@]}"
+# restore positional parameters
+
+_debug "Runtime variables:
+------------------------------------------
+UNKNOWN             |$PARAMETERS
+CONFIG_FILE         |$CONFIG_FILE
+MYSQLDUMP_OPTIONS   |$MYSQLDUMP_OPTIONS
+PGSQLDUMP_OPTIONS   |$PGSQLDUMP_OPTIONS
+KEEP_MAX_COPIES     |$KEEP_MAX_COPIES
+DUMP_DIR            |$DUMP_DIR
+MYSQL_SKIP_DB       |$MYSQL_SKIP_DB
+PGSQL_SKIP_DB       |$PGSQL_SKIP_DB
+POSTGRES_USER       |$POSTGRES_USER
+MYSQL               |$MYSQL
+MYSQLDUMP           |$MYSQLDUMP
+BACKUP_MYSQL        |$BACKUP_MYSQL
+PGSQL               |$PGSQL
+PGSQLDUMP           |$PGSQLDUMP
+BACKUP_PGSQL        |$BACKUP_PGSQL
+------------------------------------------"
+
+#############################################################################
+#                   Default to help text if unhanded input                  #
+#############################################################################
+
+if [ "${#PARAMETERS}" -gt "0" ]; then
+  echo -e "Usage: \033[1mbmsqldump <options>\033[0m
+
+Common
+
+  --dir, -d <path>         Override path to dump directory.
+                             Will be created/chown'd/chmod'd to root user.
+                             Defaults to $DUMP_DIR
+  --keep, -k <number>      Number of dumps to keep before removing old copies.
+                             Defaults to $KEEP_MAX_COPIES
+  --verbose, -v            Output progress to both stdout and log file.
+
+Skip MySQL or Postgres dumps
+
+  --skip-mysql             Ignore mySQL databases even if it's detected.
+  --skip-postgres          Ignore PostgreSQL databases even if it's detected.
+
+Executable paths
+
+  --mysql <file>           Override path to 'mysql' executable.
+  --mysqldump <file>       Override path to 'mysqldump' executable.
+  --psql <file>            Override path to 'psql' executable.
+  --pg_dump <file>         Override path to 'pg_dump' executable.
+  --pg_dumpall <file>      Override path to 'pg_dumpall' executable.
+
+Authentication
+
+  --mysql-defaults         Optional 'defaults-file' to use in debian.cnf
+                             format. Defaults to /etc/mysql/bmsqldump.cnf,
+                             debian.cnf and bytemark.cnf in that order.
+                             Must be secured to root user only.
+  --postgres-user <user>   Specify system user for queries/dumps if 'postgres'
+                             user doesnt exist.
+
+Other
+
+  --force                  Force a run even if currently locked.
+  --config <file>          Specify a config file to override defaults.
+                             Defaults to /etc/bmsqldump.conf if exists
+                             and must be secured to root.
+  --help                   This text.
+"
+
+  _exit 0
+fi
+
+#############################################################################
+#                       Check for root priviledges                          #
+#############################################################################
+
+if [ $( id -u ) -ne 0 ]; then
+  _error This must be run as root.
+  _exit 256
+fi
+
+
+_verbose "Starting bmSQLdump at $(date)"
+
+
+#############################################################################
+#                        Check for and Enable Lock                          #
+#############################################################################
+
+if [ $FORCE ]; then
+  _debug "Ignoring current lock status"
+  touch /var/run/bmsqldump.lock
+else
+  _debug "Checking lock status"
+  if [ -f /var/run/bmsqldump.lock ]; then
+    if [ $(find /var/run/bmsqldump.lock -mmin -$((60*24*2)) | wc -l ) -gt 0 ]; then
+      _error "Locked. Started running some time in the last 2 days and hasn't finished yet. Use --force to override."
+      _exit 128
+    else
+      _warn "Removing stale lock file"
+      touch /var/run/bmsqldump.lock
+    fi
+  else
+    touch /var/run/bmsqldump.lock
+  fi
+fi
+
+#############################################################################
+############################### MySQL & Forks ###############################
+#############################################################################
+
+if [ ! -z ${BACKUP_MYSQL+x} ]; then
+
+  #############################################################################
+  #                         Determine MySQL Flavour                           #
+  #############################################################################
+  _debug Determine MySQL Flavour
+
+  # not needed for PostgreSQL as it's not got as many forks.
+
+  MYSQL_HELP_TEXT="$( $MYSQL --help | head -n 2 )"
+  if [ ${#MYSQL_HELP_TEXT} -eq 0 ]; then
+    _error Unable to get the MySQL branch
+  fi
+
+  if [ $( echo $MYSQL_HELP_TEXT | grep -c -i 'MariaDB' ) -gt 0 ]; then
+    MYSQL_FORK='mariadb'
+  else
+    if [ $( echo $MYSQL_HELP_TEXT | grep -c -i 'Percona' ) -gt 0 ]; then
+      MYSQL_FORK='percona'
+    else
+      MYSQL_FORK='mysql'
+    fi
+  fi
+
+  #############################################################################
+  #                  Determine MySQL Authentication Method                    #
+  #############################################################################
+
+  ## MariaDB can simply be used with 'mysql', others will need /etc/mysql/bmsqldump.cnf,
+  ## /etc/mysql/bytemark.cnf or /etc/mysql/debian.cnf
+
+  ## Use credentials from (in order) /etc/mysql/bmsqldump.cnf, /etc/mysql/debian.cnf
+  ## /etc/mysql/bytemark.cnf or the normal MySQL methods available to root.
+
+  # look for /etc/mysql directory (won't exist on centos)
+  if [ -d /etc/mysql ]; then
+    if [ -f "$MYSQL_DEFAULTS" ]; then
+      if [ "$( find "$MYSQL_DEFAULTS" -user root -perm 0600 | wc -l )" == "1" ]; then
+        _debug Secure /etc/mysql/bmsqldump.cnf found.
+        AUTH="--defaults-file=/etc/mysql/bmsqldump.cnf"
+      fi
+    elif [ -f /etc/mysql/debian.cnf ]; then
+      if [ "$( find /etc/mysql/debian.cnf -user root -perm 0600 | wc -l )" == "1" ]; then
+        _debug Secure /etc/mysql/debian.cnf found.
+        AUTH="--defaults-file=/etc/mysql/debian.cnf"
+      fi
+    elif [ -f /etc/mysql/bytemark.cnf ]; then
+      if [ "$( find /etc/mysql/bytemark.cnf -user root -perm 0600 | wc -l )" == "1" ]; then
+        _debug Secure /etc/mysql/bytemark.cnf found.
+        AUTH="--defaults-file=/etc/mysql/bytemark.cnf"
+      fi
+    fi
+  else
+    # It should still pick up the config from /root/.my.cnf or /root/.mylogin.cnf
+    _debug Falling back to built-in auth methods.
+    AUTH=""
+  fi
+  MYSQL="$MYSQL $AUTH"
+  MYSQLDUMP="$MYSQLDUMP $AUTH"
+
+  #############################################################################
+  #                        Determine MySQL Version                            #
+  #############################################################################
+
+  ## As database structures can be fairly different between MySQL versions,
+  ## we need to make sure we have the DB version in the filename to make it
+  ## clear there are compatability differences when using the restore function.
+
+  MYSQL_VER="$( $MYSQL -BNe 'SHOW VARIABLES LIKE "version";' | awk '{ print $2 };' | grep -oi '^[a-z0-9]*\.[a-z0-9]*' | head -n 1 2> $STDERR )"
+  _check_stderr $?
+
+  MYSQL_PREFIX="${MYSQL_FORK}_${MYSQL_VER}"
+  _debug "Database dump prefix: $MYSQL_PREFIX"
+
+  #############################################################################
+  #                       Make List of Databases to Dump                      #
+  #############################################################################
+
+  _debug 'retrieve list of databases to dump'
+  MYSQL_TO_DUMP="$( for db in $( $MYSQL -BNe 'SHOW DATABASES;' ); do if [ "$( echo $MYSQL_SKIP_DB | grep -c "$db" )" -eq 0 ]; then echo $db; fi; done )"
+
+  _debug "MySQL Databases to dump: $( echo $MYSQL_TO_DUMP | tr '\n' ' ' )"
+
+fi
+
+#############################################################################
+################################# PostgreSQL ################################
+#############################################################################
+
+
+if [ ! -z ${BACKUP_PGSQL+x} ]; then
+
+  ###########################################################################
+  #                      Determine PostgreSQL Version                       #
+  ###########################################################################
+
+  PGSQL_VER=$( $PGSQL -V | head -n 1 | tr ' ' '\t' | sed 's|\.|\t|2' | cut -f 3 2> $STDERR )
+  _check_stderr $?
+
+  PGSQL_PREFIX="postgres_$PGSQL_VER"
+
+  ###########################################################################
+  #                   List PostgreSQL Databases to Dump                     #
+  ###########################################################################
+
+  _debug "Collecting list of Postgres databases to dump"
+  _debug "check for a 'postgres' user"
+  if [ "$( id -u postgres 2> /dev/null )" != "" ]; then
+    _debug "theres a postgres user - sudo to it for the queries"
+    PGSQL_TO_DUMP="$( for db in $(su postgres -c 'cd /tmp; psql -t -c "SELECT datname FROM pg_database;" | tr -d " " | grep "^[a-z0-9_]" ' 2> $STDERR ) ; do if [ "$( echo $PGSQL_SKIP_DB | grep -c "$db" )" -eq 0 ]; then echo $db; fi; done 2>> $STDERR )"
+    _check_stderr $?
+  else
+    _debug "no postgres system user, will try using defined user"
+    if [ "$POSTGRES_USER" != "" ]; then
+      PGSQL_TO_DUMP="$( for db in $(psql postgres -U $POSTGRES_USER -t -c "SELECT datname FROM pg_database;" | tr -d " " | grep "^[a-z0-9_]" 2> $STDERR ); do if [ "$( echo $PGSQL_SKIP_DB | grep -c "$db" )" -eq 0 ]; then echo $db; fi; done 2>> $STDERR )"
+      _check_stderr $?
+    else
+      _warn "No 'postgres' user to switch to, and PostgreSQL user not defined. Disabling Postgres dumps."
+      unset BACKUP_PGSQL
+    fi
+  fi
+
+  _debug "PostgreSQL Databases to dump: $( echo $PGSQL_TO_DUMP | tr '\n' ' ' )"
+fi
+
+#############################################################################
+#                        Output Databases to Dump                           #
+#############################################################################
+
+if [ ${#MYSQL_TO_DUMP} -gt 0 ]; then
+  _verbose "Identified MySQL databases: $( echo $MYSQL_TO_DUMP | tr '\n' ' ' )($MYSQL_PREFIX)"
+fi
+
+if [ ${#PGSQL_TO_DUMP} -gt 0 ]; then
+  _verbose "Identified PostgreSQL databases: $( echo $PGSQL_TO_DUMP | tr '\n' ' ' )($PGSQL_PREFIX)"
+fi
+
+#############################################################################
+#                       Secure SQL Dump Directory                           #
+#############################################################################
+
+_debug 'Secure SQL Dump Directory'
+if [ ! -d "$DUMP_DIR/." ]; then
+  mkdir -p $DUMP_DIR
+  _verbose "Created dump target directory $DUMP_DIR"
+fi
+if [ $( find $DUMP_DIR -maxdepth 0 -user root -perm 700 | wc -l ) -ne 1 ]; then
+  chown 0:0 "$DUMP_DIR/."
+  chmod 700 "$DUMP_DIR/."
+  _verbose "Adjusted permissions for $DUMP_DIR"
+fi
+
+#############################################################################
+############################## Do the Dumps #################################
+#############################################################################
+
+
+if [ ! -z ${BACKUP_MYSQL+x} ]; then
+
+  #############################################################################
+  #                            Dump MySQL Databases                           #
+  #############################################################################
+
+  # itterate through databases
+  for DATABASE in ${MYSQL_TO_DUMP}; do
+
+    _debug "Determining target file name for database '$DATABASE'"
+    ### name format is <service><version>_<database>_YYYY-MM-DD_HH:MM:SS_ZZZ_DDDDD.sql.gz
+    TIMESTAMP="$(date +%Y%m%d_%H%M%S_%Z_%A)"
+
+    ## dump database
+    DUMP_FILENAME="${DUMP_DIR}/${MYSQL_PREFIX}${SEPERATOR}${DATABASE}${SEPERATOR}${TIMESTAMP}.sql.gz"
+
+    if [ -f $DUMP_FILENAME ]; then
+      _error "Dump with filename '$DUMP_FILENAME' already exists. This shouldn't happen."
+    else
+      _debug 'Creating dummy file and setting permissions'
+      touch $DUMP_FILENAME
+      chown 0:0 $DUMP_FILENAME
+      chmod 600 $DUMP_FILENAME
+
+      ## determine dump type
+      ### MyISAM tables need to be locked, InnoDB tables don't, and use different dump types
+      ###   so we need to determine if there are only InnoDB tables in the specific schema,
+      ###   and if so, we can use that method.
+      NON_INNODB_TABLES=$( $MYSQL -BNe "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DATABASE' AND engine <> 'InnoDB';" )
+
+      if [ $NON_INNODB_TABLES -eq 0 ]; then
+        _debug "There are no non-InnoDB tables in '$DATABASE', running dump with --single-transaction"
+        _verbose "Dumping database '$DATABASE' into '$( echo $DUMP_FILENAME | sed 's|.*/||' )'"
+        _debug "Running: $MYSQLDUMP $MYSQLDUMP_OPTIONS --single-transaction $DATABASE | gzip --fast 2> $STDERR > ${DUMP_FILENAME}"
+        $MYSQLDUMP $MYSQLDUMP_OPTIONS --single-transaction $DATABASE | gzip --fast 2> $STDERR > "${DUMP_FILENAME}"
+        _check_stderr $?
+      else
+        _debug "There are '$NON_INNODB_TABLES' non-InnoDB tables in '$DATABASE', running dump in compatability mode"
+        _verbose "Dumping database '$DATABASE' into '$( echo $DUMP_FILENAME | sed 's|.*/||' )'"
+        _debug "Running: $MYSQLDUMP $MYSQLDUMP_OPTIONS --lock-tables $DATABASE | gzip --fast 2> $STDERR > ${DUMP_FILENAME}"
+        $MYSQLDUMP $MYSQLDUMP_OPTIONS --lock-tables $DATABASE | gzip --fast 2> $STDERR > "${DUMP_FILENAME}"
+        _check_stderr $?
+      fi
+    fi
+
+    _validate_dump $DUMP_FILENAME
+
+    _debug "Cleaning up old dumps of $DATABASE - keeping $KEEP_MAX_COPIES copies"
+    if [ $KEEP_MAX_COPIES -ge 1 ]; then
+      find ${DUMP_DIR} -name "${MYSQL_PREFIX}${SEPERATOR}${DATABASE}${SEPERATOR}*.sql.gz" -print | sort > $_TEMP-dumps
+      tail -n -${KEEP_MAX_COPIES} $_TEMP-dumps > $_TEMP-keepdumps
+      cat $_TEMP-dumps | while read DUMPNAME; do
+        if [ $( grep -c $DUMPNAME $_TEMP-keepdumps ) -eq 0 ]; then
+          _verbose "  Removing old dump file '$( echo $DUMPNAME | sed 's|.*/||' )'"
+          rm $DUMPNAME
+        else
+          _debug "  keeping wanted dump $DUMPNAME"
+        fi
+      done
+    fi
+
+  done
+
+fi
+
+
+if [ ! -z ${BACKUP_PGSQL+x} ]; then
+
+  #############################################################################
+  #                         Dump PostgreSQL Databases                         #
+  #############################################################################
+
+  # itterate through databases
+  for DATABASE in ${PGSQL_TO_DUMP} __globals; do
+
+    _debug "Determining target file name for database '$DATABASE'"
+    ### name format is <service><version>_<database>_YYYY-MM-DD_HH:MM:SS_ZZZ_DDDDD.sql.gz
+    TIMESTAMP="$(date +%Y%m%d_%H%M%S_%Z_%A)"
+
+    ## dump database
+    DUMP_FILENAME="${DUMP_DIR}/${PGSQL_PREFIX}${SEPERATOR}${DATABASE}${SEPERATOR}${TIMESTAMP}.sql.gz"
+
+    if [ -f $DUMP_FILENAME ]; then
+      _error "Dump with filename '$DUMP_FILENAME' already exists. This shouldn't happen."
+    else
+      _debug 'Creating dummy file and setting permissions'
+      touch $DUMP_FILENAME
+      chown 0:0 $DUMP_FILENAME
+      chmod 600 $DUMP_FILENAME
+
+      _verbose "Dumping database '$DATABASE' into '$( echo $DUMP_FILENAME | sed 's|.*/||' )'"
+
+      # if $POSTGRES_USER is set, and there is no postgres user...
+      if [ "$POSTGRES_USER" != "" ] && [ "$( id -u postgres 2> /dev/null )" == "" ]; then
+        # run the dump specifying the user
+        if [ "$DATABASE" == "__globals" ]; then
+          $PGSQLDUMPALL $PGSQLDUMPALL_OPTIONS -U $POSTGRES_USER --globals-only | gzip --fast > "${DUMP_FILENAME}" 2> $STDERR
+          _check_stderr $?
+        else
+          $PGSQLDUMP $PGSQLDUMP_OPTIONS -U $POSTGRES_USER $DATABASE | gzip --fast > "${DUMP_FILENAME}" 2> $STDERR
+          _check_stderr $?
+        fi
+      else
+        # run the dump as the postgres user
+        if [ "$DATABASE" == "__globals" ]; then
+          su postgres -c "cd /tmp; $PGSQLDUMPALL $PGSQLDUMPALL_OPTIONS --globals-only" | gzip --fast > "${DUMP_FILENAME}" 2> $STDERR
+          _check_stderr $?
+        else
+          su postgres -c "cd /tmp; $PGSQLDUMP $PGSQLDUMP_OPTIONS $DATABASE" | gzip --fast > "${DUMP_FILENAME}" 2> $STDERR
+          _check_stderr $?
+        fi
+      fi
+
+    fi
+
+    _validate_dump $DUMP_FILENAME
+
+    _debug "Cleaning up old dumps of $DATABASE - keeping $KEEP_MAX_COPIES copies"
+    if [ $KEEP_MAX_COPIES -ge 1 ]; then
+      find ${DUMP_DIR} -name "${PGSQL_PREFIX}${SEPERATOR}${DATABASE}${SEPERATOR}*.sql.gz" -print | sort > $_TEMP-dumps
+      tail -n -${KEEP_MAX_COPIES} $_TEMP-dumps > $_TEMP-keepdumps
+      cat $_TEMP-dumps | while read DUMPNAME; do
+        if [ $( grep -c $DUMPNAME $_TEMP-keepdumps ) -eq 0 ]; then
+          _verbose "  Removing old dump file '$( echo $DUMPNAME | sed 's|.*/||' )'"
+          rm $DUMPNAME
+        else
+          _debug "  Keeping wanted dump $DUMPNAME"
+        fi
+      done
+    fi
+  done
+
+fi
+
+
+# send dump heartbeat/status
+
+rm "/var/run/bmsqldump.lock"
+
+_verbose "bmSQLdump complete at $(date)"
+
+if [ "${MAUVESEND}" != "" ]; then
+  if [ $( grep -c "^WARNING" $_TEMP-$LOGNAME ) -gt 0 ]; then
+    $MAUVESEND $MAUVE_TARGET --id bmsqldump-normal -o "$HOSTNAME" -r now -s "bmSQLdump warning on $HOSTNAME" -d "Warning Detected:<pre>$( grep -C 5 "^WARNING" $_TEMP-$LOGNAME )</pre><p>This alert will clear once the dump completes okay."
+  else
+    $MAUVESEND $MAUVE_TARGET --id bmsqldump-normal -o "$HOSTNAME" -r +30h -s "bmSQLdump heartbeat missed on $HOSTNAME" -d "Last result was at $( date ):<p><pre>$( grep 'bmSQLdump' $_TEMP-$LOGNAME )</pre><p>This alert will clear once the dump completes okay."
+  fi
+fi
+
+_verbose " "
+
+_exit 0
