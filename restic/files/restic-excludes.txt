@@ -30,3 +30,4 @@
 /var/lib/php5
 /var/lib/docker/aufs
 /var/lib/docker/overlay2
+/storage/elasticsearch
