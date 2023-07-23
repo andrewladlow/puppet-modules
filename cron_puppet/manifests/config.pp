@@ -1,4 +1,4 @@
-class cron::config {
+class cron_puppet::config {
 
   cron { 'puppet agent -t':
     ensure  => 'present',
