@@ -1,9 +1,9 @@
 {
-	"name": "cron",
-	"version": "1.0.0",
-	"summary": "Adds a cron task to run Puppet",
-	"author": "Andrew Ladlow",
-	"license": "",
-	"dependencies": [],
-	"source": "https://github.com/andrewladlow/puppet-modules"
+       "name": "cron",
+       "version": "1.0.0",
+       "summary": "Adds a cron task to run Puppet",
+       "author": "Andrew Ladlow",
+       "license": "",
+       "dependencies": [],
+       "source": "https://github.com/andrewladlow/puppet-modules"
 }
