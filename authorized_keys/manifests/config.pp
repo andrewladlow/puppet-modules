@@ -6,7 +6,7 @@ class authorized_keys::config {
     ensure  => file,
     mode    => '0600',
     replace => yes,
-    content => template('authorized_keys/root_ssh_authorized-keys'),
+    content => $authorized_keys,
   }
 
 }
