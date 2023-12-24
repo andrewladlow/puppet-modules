@@ -42,6 +42,9 @@ HISTTIMEFORMAT="%F %T: "
 #PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\] "
 #PS1="\[\033[1;36m\]\u\[\033[1;31m\]@\[\033[1;32m\]\h:\[\033[1;35m\]\w\[\033[1;31m\]\$\[\033[0m\]$PS1"
 
+# Filter out overlayfs (docker)
+alias df='df -x overlay'
+
 #######################################################################################################################
 
 ssl() {
@@ -53,3 +56,4 @@ ssl-full() {
 ssl-full2() {
   true | openssl s_client -servername $@ -connect $@:443 | openssl x509 -noout -text
 }
+
