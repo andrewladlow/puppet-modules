@@ -57,3 +57,6 @@ ssl-full2() {
   true | openssl s_client -servername $@ -connect $@:443 | openssl x509 -noout -text
 }
 
+if [ -f "/root/.acme.sh/acme.sh.env" ]; then
+  . "/root/.acme.sh/acme.sh.env"
+fi
