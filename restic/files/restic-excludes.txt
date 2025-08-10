@@ -32,3 +32,5 @@
 /var/lib/docker/overlay2
 /storage/elasticsearch
 /opt/docker/frigate/storage
+/snap
+/var/snap
